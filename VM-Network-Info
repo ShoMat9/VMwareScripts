@@ -1,0 +1,36 @@
+############### Modify as required ##################################################
+$ShoReport = Get-Date -UFormat "<location>\VM-network-%Y%b%d@%I%M%p.html"
+$VIServers= "VC"
+connect-viserver $VIServers -user abc -password "xyz"
+
+############################## SCRIPT ###################################################
+Import-Module VMware.VimAutomation.Core -ErrorAction SilentlyContinue
+Add-PSsnapin VMware.VimAutomation.Core -ErrorAction SilentlyContinue
+Import-Module VMware.VimAutomation.Storage -ErrorAction SilentlyContinue
+$YYYYMMDD = Get-Date -format 'yyyyMMdd'
+$today  = get-Date
+$ShoStyle = @"<style>
+TABLE {border-width: 1px;border-style: solid;border-color: black;border-collapse: collapse;Font-Size: 8pt;Font-Family: Tahoma, sans-serif;}
+TH {border-width: 1px;padding: 3px;border-style: solid;border-color: black;background-color: #bc64ed;}
+TD {border-width: 1px;padding: 3px;border-style: solid;border-color: black;}
+</style>"@
+#################################################################################
+$PowerState = @{N="Power State" ; E={$_.powerState}}
+$vCenter = @{N="vCenter Server" ; E={$VIServers}}
+$Cluster = @{N="Cluster" ; E={Get-Cluster -VM $_}}
+$ESX = @{N="ESXi Host" ; E={Get-VMHost -VM $_}}
+$OS = @{N="OS" ; E={$_.ExtensionData.Guest.guestFullName}}
+$IP1 = @{N="IP 1";E={@($_.guest.IPAddress[0])}}
+$IP2 = @{N="IP 2";E={@($_.guest.IPAddress[1])}}
+$IP3 = @{N="IP 3";E={@($_.guest.IPAddress[2])}}
+$IP4 = @{N="IP 4";E={@($_.guest.IPAddress[3])}}
+$IP5 = @{N="IP 5";E={@($_.guest.IPAddress[4])}}
+$IP6 = @{N="IP 6";E={@($_.guest.IPAddress[5])}}
+$IP = @{N="IP 6";E={@($_.guest.IPAddress[*])}}
+$Portgroups = @{N='Portgroups';E={(Get-NetworkAdapter -VM $_).NetworkName -join '|'}}
+#--------------#
+$ShoX += "<p><h4><b>VM Network Info</b></h4></p>"
+$ShoX += Get-VM  | Select Name,$ESX,$Cluster,$Portgroups, $IP1, $IP2, $IP3, $IP4, $IP5, $IP6 | ConvertTo-Html -head $ShoStyle
+Disconnect-VIServer $VIServers -Force -Confirm:$false
+$ShoX | out-file $ShoReport
+#################################################################################
