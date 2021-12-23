@@ -1,0 +1,98 @@
+############### Modify as required ##################################################
+$VIServers= "VC"
+connect-viserver $VIServers -user abc -password "xyz"
+$reportFileX = Get-Date -UFormat "<Location>\FW-List-%Y%b%d@%I%M%p.html"  
+$ShoX +=  "<h1><center>NSX Report as on $today.</center><br></h1><br>"
+############################## MAIN SCRIPT ###################################################           
+$ShoStyle=@"<style> 
+TABLE {border-width: 1px;border-style: solid;border-color: black;border-collapse: collapse;Font-Size: 8pt;Font-Family: Tahoma, sans-serif;} 
+TH {border-width: 1px;padding: 3px;border-style: solid;border-color: black;background-color: #bc64ed;} 
+TD {border-width: 1px;padding: 3px;border-style: solid;border-color: black;} 
+</style>
+"@
+#-------------------- Firewall Rules--------------------------------------------#
+$DFWRules = Get-NSXFirewallRule
+$FWRules = @()
+$i = 1
+Foreach ($Rule in $DFWRules)
+{   
+    $NewObject = "" | Select-Object SectionID, RuleID, RuleName, Source, Destination, ServicePorts, Action, appliedTo
+    ## Artificial Number, assumes cmdlet pulls down rules in order of application.
+    $NewObject.SectionID = $Rule.SectionId
+    $NewObject.RuleID = $Rule.id
+    $NewObject.RuleName = $Rule.Name
+    $RuleMembers = $Rule | get-NSXFirewallRuleMember
+    ##
+    $Sources =  $RuleMembers | Where-Object {$_.MemberType -eq "Source"}
+    $Destinations = $RuleMembers | Where-Object {$_.MemberType -eq "Destination"}
+    ## Sources
+    If (($Sources | Measure-Object).count -gt 1)
+    {$TempObj = $null
+        Foreach ($Source in $Sources){
+            $TempObj = $Source.Name + "|" + $TempObj 
+        }
+        $NewObject.Source = $TempObj.trimend("|")
+    }
+    ElseIf ($Sources.Name) {$NewObject.Source = $Sources.Name}
+    Else {$NewObject.Source = "ANY"}
+    ## Destinations
+    If (($Destinations | Measure-Object).count -gt 1)
+    {$TempObj = $null
+        Foreach ($Destination in $Destinations){
+            If($Destination.Name){$TempObj = $Destination.Name + "|" + $TempObj }
+            Else{$TempObj = $Destination.Value + "|" + $TempObj }
+        }
+        $NewObject.Destination = $TempObj.trimend("|")
+    }
+    ElseIf ($Destinations.Name) {$NewObject.Destination = $Destinations.Name}
+    Else {$NewObject.Destination = "ANY"}
+    ## Services
+    If ($Rule.Services -and ($Rule.Services.Service | Measure-Object).count -gt 1)
+    {$TempObj = $null
+        Foreach ($Service in $Rule.Services.Service){
+            If($Service.Name -and $Service.Name -ne "service"){$TempObj = $Service.Name + "|" + $TempObj }
+            If($Service.destinationport){$TempObj = $Service.destinationport + "|" + $TempObj }
+        }
+        $NewObject.ServicePorts = $TempObj.trimend("|")
+    }
+    ElseIf ($Rule.Services.Service.Name -and $Rule.Services.Service.Name -ne "service") {$NewObject.ServicePorts = $Rule.Services.Service.Name}
+    ElseIf ($Rule.Services.Service.destinationport) {$NewObject.ServicePorts = $Rule.Services.Service.destinationport}
+    Else {$NewObject.ServicePorts = "ANY"}
+    ## Action
+    $NewObject.Action = $Rule.Action
+    
+    ## AppliedTo
+    If ($Rule.appliedToList -and ($Rule.appliedToList.appliedTo | Measure-Object).count -gt 1)
+    {$TempObj = $null
+        Foreach ($Applied in $Rule.appliedToList.appliedTo){
+            If($Applied.Name){$TempObj = $Applied.Name + "|" + $TempObj }
+        }
+        $NewObject.appliedTo = $TempObj.trimend("|")
+    }
+    Else {$NewObject.appliedTo = $Rule.appliedToList.appliedTo.Name}
+    $FWRules += $NewObject 
+}
+$ShoX += $FWRules | ConvertTo-Html -body $ShoStyle 
+
+#---------------------IP Sets-------------------------------------------#
+$ShoX += "<br><h4>IPSets</h4>"
+$ShoX += Get-NsxIPset | Where-Object {$_.Name -like "<Unique String>"} | select name,value | ConvertTo-Html -body $ShoStyle 
+
+#----------------------Security Groups------------------------------------------#
+$ShoX += "<br><h4>SecurityGroups</h4>"
+$ShoX += Get-NsxSecurityGroup | Where-Object {$_.Name -like "<Unique String>"}  | select name | ConvertTo-Html -body $ShoStyle 
+
+#-----------------------Services-----------------------------------------#
+$ShoX += "<br><h4>Services</h4>"
+#$ShoX += Get-NsxService | Where-Object {$_.Name -like "<Unique String>"} | select name | ConvertTo-Html -body $ShoStyle 
+$ShoX += get-nsxservice | where {$_.name -like "<Unique String>"} | select name,isuniversal,@{Name='Protocol'; Expression={$_.element.applicationprotocol}},@{Name='DstPort'; Expression={$_.element.value}} | ConvertTo-Html -body $ShoStyle 
+
+#---------------------Service Groups-------------------------------------------#
+$ShoX += "<br><h4>Service Group</h4>"
+$ShoX += Get-NsxServiceGroup | Where-Object {$_.Name -like "<Unique String>"} | select name,@{N="Services";E={($_.member).name}} | ConvertTo-Html -body $ShoStyle 
+#----------------------------------------------------------------#
+#----------------------------------------------------------------#
+#----------------------------------------------------------------#
+
+$ShoX | out-file $reportFileX
+###################################################
